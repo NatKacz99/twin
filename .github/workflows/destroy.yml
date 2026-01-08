@@ -1,6 +1,6 @@
 name: Destroy Environment
 
-on: 
+on:
   workflow_dispatch:
     inputs:
       environment:
@@ -21,21 +21,20 @@ permissions:
 
 jobs:
   destroy:
-    name: Destroy ${{github.event.inputs.environment}}
+    name: Destroy ${{ github.event.inputs.environment }}
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
-
+    
     steps:
       - name: Verify confirmation
         run: |
-        if [ "${{ github.event.inputs.confirm }}" != "${{ 
-github.event.inputs.environment }}" ]; then
+          if [ "${{ github.event.inputs.confirm }}" != "${{ github.event.inputs.environment }}" ]; then
             echo "❌ Confirmation does not match environment name!"
             echo "You entered: '${{ github.event.inputs.confirm }}'"
             echo "Expected: '${{ github.event.inputs.environment }}'"
             exit 1
-        fi
-        echo "✅ Destruction confirmed for ${{ github.event.inputs.environment }}"
+          fi
+          echo "✅ Destruction confirmed for ${{ github.event.inputs.environment }}"
 
       - name: Checkout code
         uses: actions/checkout@v4
