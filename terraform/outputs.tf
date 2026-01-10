@@ -27,3 +27,8 @@ output "custom_domain_url" {
   description = "Root URL of the production site"
   value       = var.use_custom_domain ? "https://${var.root_domain}" : ""
 }
+
+output "s3_qa_bucket" {
+  description = "Name of the S3 bucket for Q&A knowledge base"
+  value       = aws_s3_bucket.qa.id
+}

@@ -39,6 +39,28 @@ resource "aws_s3_bucket_ownership_controls" "memory" {
   }
 }
 
+resource "aws_s3_bucket" "qa" {
+  bucket = "${local.name_prefix}-qa-{data.aws_caller_identity.current.account_id}
+  tags = local.common_tags
+}
+
+resource "aws_s3_bucket_public_access_block" "qa" {
+  bucket = aws_s3_bucket.qa.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "qa" {
+  bucket = aws_s3_bucket.qa.id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
 # S3 bucket for frontend static website
 resource "aws_s3_bucket" "frontend" {
   bucket = "${local.name_prefix}-frontend-${data.aws_caller_identity.current.account_id}"
@@ -137,6 +159,11 @@ resource "aws_lambda_function" "api" {
       S3_BUCKET        = aws_s3_bucket.memory.id
       USE_S3           = "true"
       BEDROCK_MODEL_ID = var.bedrock_model_id
+      QA_BUCKET = aws_s3_bucket.qa.id
+      USE_QA = "true"
+      PUSHOVER_USER_KEY = var.pushover_user_key
+      PUSHOVER_API_KEY = var.pushover_api_token
+      ENABLE_PUSHOVER      = var.enable_pushover ? "true" : "false"
     }
   }
 

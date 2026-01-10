@@ -19,7 +19,7 @@ variable "environment" {
 variable "bedrock_model_id" {
     description = "Bedrock model ID"
     type        = string
-    default     = "amazon.nova-micro-v1:0"
+    default     = "eu.amazon.nova-micro-v1:0"
 }
 
 variable "lambda_timeout" {
@@ -50,4 +50,24 @@ variable "root_domain" {
   description = "Apex domain name, e.g. mydomain.com"
   type        = string
   default     = ""
+}
+
+variable "pushover_user_key" {
+  description = "Pushover User Key for Notifications"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "pushover_api_token" {
+  descriptions = "Pushover API Token for Notifications"
+  type         = string
+  default      = ""
+  sensitive    = true
+}
+
+variable "enable_pushover" {
+  descriptions = "Enable Pushover notifications for unknown notifications"
+  type         = bool
+  default      = false
 }
