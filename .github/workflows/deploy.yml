@@ -58,6 +58,17 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Sync Q&A to S3
+        run: |
+          if [ -d "qa" ]; then
+            echo "Syncing Q&A to S3 bucket: $QA_BUCKET"
+            aws s3 sync qa/ s3://$QA_BUCKET --delete
+          else
+            echo "No qa/ directory found, skipping Q&A sync"
+          fi
+        env:
+          QA_BUCKET: ${{ secrets.QA_BUCKET }}
+
       - name: Run Deployment Script
         run: |
           # Set environment variables for the script
