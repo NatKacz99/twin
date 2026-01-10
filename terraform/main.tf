@@ -40,7 +40,7 @@ resource "aws_s3_bucket_ownership_controls" "memory" {
 }
 
 resource "aws_s3_bucket" "qa" {
-  bucket = "${local.name_prefix}-qa-{data.aws_caller_identity.current.account_id}
+  bucket = "${local.name_prefix}-qa-{data.aws_caller_identity.current.account_id}"
   tags = local.common_tags
 }
 
