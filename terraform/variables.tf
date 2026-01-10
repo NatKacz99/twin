@@ -60,14 +60,14 @@ variable "pushover_user_key" {
 }
 
 variable "pushover_api_token" {
-  descriptions = "Pushover API Token for Notifications"
+  description = "Pushover API Token for Notifications"
   type         = string
   default      = ""
   sensitive    = true
 }
 
 variable "enable_pushover" {
-  descriptions = "Enable Pushover notifications for unknown notifications"
+  description = "Enable Pushover notifications for unknown notifications"
   type         = bool
   default      = false
 }
