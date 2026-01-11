@@ -48,7 +48,7 @@ MEMORY_DIR = os.getenv("MEMORY_DIR", "../memory")
 
 # Q&A Configuration
 QA_BUCKET = os.getenv("QA_BUCKET", "")
-USE_QA = os.getenv("USE_QA", "false").lower() = "true"
+USE_QA = os.getenv("USE_QA", "false").lower() == "true"
 
 # Pushover Configuration
 PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY", "")
