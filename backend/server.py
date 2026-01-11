@@ -472,6 +472,21 @@ async def get_conversation(session_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Test sending notifications locally
+@app.get("/test-pushover")
+async def test_pushover():
+    assistant_response = "I don't know the answer to that"
+    session_id = "test-session-123"
+    question = "Test question for unknown answer"
+
+    unknown = detect_unknown_answer(assistant_response)
+    print("DEBUG: detect_unknown_answer =", unknown)
+
+    if unknown:
+        send_pushover_notification(question, session_id)
+        print("DEBUG: send_pushover_notification called")
+    
+    return {"unknown_detected": unknown, "pushover_called": unknown}
 
 if __name__ == "__main__":
     import uvicorn
