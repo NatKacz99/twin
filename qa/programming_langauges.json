@@ -1,4 +1,11 @@
 {
+    "category": "programming",
+    "keywords": [
+        "programming\\s+language(s)?",
+        "coding\\s+language(s)?",
+        "write\\s+code",
+        "developer"
+    ],
     "question": "What programming languages ​​do you know?",
     "answer": "I know C++, JavaScript, HTML, CSS, Python, React, PHP"
 }

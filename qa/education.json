@@ -1,4 +1,6 @@
 {
+    "category": "education",
+    "keywords": ["education", "field studies", "degree"],
     "question": "What is your education?",
     "answer": "I completed my bachelor's degree in chemistry at Cardinal Stefan Wyszyński University in Warsaw."
 }

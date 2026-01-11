@@ -11,6 +11,7 @@ import boto3
 from botocore.exceptions import ClientError
 from context import prompt
 import requests
+import re
 
 # Load environment variables
 load_dotenv()
@@ -56,7 +57,7 @@ PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN", "")
 ENABLE_PUSHOVER = os.getenv("ENABLE_PUSHOVER", "false").lower() == "true"
 
 # Initialize S3 client if needed
-if USE_S3:
+if USE_S3 or USE_QA:
     s3_client = boto3.client("s3")
 
 
@@ -77,37 +78,76 @@ class Message(BaseModel):
     timestamp: str
 
 def search_qa_bucket(question: str) -> List[Dict]:
-    """Searches through the question and answer bucket for the right answers"""
+    """
+    Searches the Q&A bucket using regex keywords and word matching.
+
+    Scoring:
+    - Keyword regex match: +10 points
+    - Common words in the question: +1 point each
+
+    Returns the top 3 best matches.
+    """
     if not USE_QA or not QA_BUCKET:
         return []
-
+    
     try:
+        # Load all files from Q&A bucket
         response = s3_client.list_objects_v2(Bucket=QA_BUCKET)
-
+        
         if 'Contents' not in response:
-            print("Not Q&A files in bucket")
+            print("No Q&A files found in bucket")
             return []
-
-        qa_pairs = []
+        
+        qa_matches = []
         question_lower = question.lower()
-
+        
         for obj in response['Contents']:
             if obj['Key'].endswith('.json'):
+                # Download the contents of the file
                 file_obj = s3_client.get_object(Bucket=QA_BUCKET, Key=obj['Key'])
                 content = json.loads(file_obj['Body'].read().decode('utf-8'))
 
-                stored_question = content.get('question', '').lower()
+                match_score = 0
+                keywords = content.get('keywords', [])
+                matched_keywords = []
 
-                if any(word in stored_question for word in question_lower.split() if len(word) > 3):
-                    qa_pairs.append({
+                for keyword_pattern in keywords:
+                    try:
+                        if re.search(keyword_pattern, question_lower, re.IGNORECASE):
+                            match_score += 10  
+                            matched_keywords.append(keyword_pattern)
+                            print(f"✅ Keyword match: '{keyword_pattern}' in question: {question[:50]}...")
+                    except re.error as e:
+                        print(f"❌ Invalid regex pattern '{keyword_pattern}': {e}")
+                        continue
+
+                stored_question = content.get('question', '').lower()
+                common_words = set(question_lower.split()) & set(stored_question.split())
+                match_score += len(common_words)
+
+                if match_score > 0:
+                    qa_matches.append({
                         'question': content.get('question'),
                         'answer': content.get('answer'),
-                        'relevance': len(set(question_lower.split()) & set(stored_question.split()))
+                        'category': content.get('category', 'general'),
+                        'match_score': match_score,
+                        'matched_keywords': matched_keywords
                     })
-        qa_pairs.sort(key=lambda x: x['relevance'], reverse=True)
-        return qa_pairs[:3]
+        
+        qa_matches.sort(key=lambda x: x['match_score'], reverse=True)
+
+        top_matches = qa_matches[:3]
+        
+        if top_matches:
+            print(f"📚 Found {len(top_matches)} Q&A matches:")
+            for i, match in enumerate(top_matches, 1):
+                print(f"  {i}. Category: {match['category']}, Score: {match['match_score']}")
+                print(f"     Matched keywords: {match['matched_keywords']}")
+        
+        return top_matches
+        
     except Exception as e:
-        print(f"Error searching Q&A bucket: {e}")
+        print(f"❌ Error searching Q&A bucket: {e}")
         return []
 
 def detect_unknown_answer(response: str) -> bool:
@@ -203,9 +243,32 @@ def call_bedrock(conversation: List[Dict], user_message: str, qa_context: str = 
     messages = []
     
     # Add system prompt as first user message (Bedrock convention)
+    system_message = f"System: {prompt()}"
+    
+    # Add strict instructions when there is Q&A context
+    if qa_context:
+        system_message += """
+
+    ========================================
+    IMPORTANT INSTRUCTIONS FOR Q&A ANSWERS:
+    ========================================
+
+    You have been provided with VERIFIED answers from the knowledge base below.
+
+    When answering questions that match the knowledge base:
+
+    1. ✅ Use ONLY the information provided in the knowledge base
+    2. ❌ Do NOT add any extra information or details not in the knowledge base
+    3. ❌ Do NOT make up or hallucinate any information
+    4. ✅ Answer in a natural, conversational way but stick STRICTLY to the facts provided
+    5. ✅ If the knowledge base answer is incomplete, say: "Based on my knowledge base: [answer]. Would you like more details?"
+    6. ✅ If multiple Q&A entries match, you can synthesize them but ONLY use the provided information
+
+    """ + qa_context
+    
     messages.append({
         "role": "user", 
-        "content": [{"text": f"System: {prompt()}"}]
+        "content": [{"text": system_message}]
     })
     
     # Add conversation history (limit to last 10 exchanges to manage context)
@@ -222,13 +285,15 @@ def call_bedrock(conversation: List[Dict], user_message: str, qa_context: str = 
     })
     
     try:
+        temperature = 0.3 if qa_context else 0.7
+        
         # Call Bedrock using the converse API
         response = bedrock_client.converse(
             modelId=BEDROCK_MODEL_ID,
             messages=messages,
             inferenceConfig={
                 "maxTokens": 2000,
-                "temperature": 0.7,
+                "temperature": temperature,  
                 "topP": 0.9
             }
         )
@@ -286,16 +351,23 @@ async def chat(request: ChatRequest):
         qa_context = ""
 
         if qa_results:
-            qa_context = "I found the following information in the knowledge base:"
+            qa_context = "=== VERIFIED KNOWLEDGE BASE ENTRIES ===\n\n"
+            
             for i, qa in enumerate(qa_results, 1):
-                qa_context += f"{i}. Question: {qa['question']}\n   Answer: {qa['answer']}\n\n"
-
-            print(f"Found {len(qa_results)} Q&A matches for {request.message[:50]}...")
-
-        assistant_response = call_bedrock(conversation, request.message, qa_context)
+                qa_context += f"Entry {i} [Category: {qa['category']}]:\n"
+                qa_context += f"Q: {qa['question']}\n"
+                qa_context += f"A: {qa['answer']}\n"
+                if qa.get('matched_keywords'):
+                    qa_context += f"(Matched keywords: {', '.join(qa['matched_keywords'])})\n"
+                qa_context += "\n"
+            
+            qa_context += "=== END OF KNOWLEDGE BASE ===\n"
+            
+            print(f"✅ Found {len(qa_results)} Q&A matches for: {request.message[:50]}...")
+            print(f"📊 Top match: Category='{qa_results[0]['category']}', Score={qa_results[0]['match_score']}")
 
         # Call Bedrock for response
-        assistant_response = call_bedrock(conversation, request.message)
+        assistant_response = call_bedrock(conversation, request.message, qa_context)
 
         # Update conversation history
         conversation.append(
@@ -312,11 +384,16 @@ async def chat(request: ChatRequest):
         # Save conversation
         save_conversation(session_id, conversation)
 
+        # Detect "I don't know" and send a Pushover notification
         if detect_unknown_answer(assistant_response):
             send_pushover_notification(request.message, session_id)
             print(f"Unknown question detected, Pushover notification sent: {request.message[:50]}...")
 
-        return ChatResponse(response=assistant_response, session_id=session_id, qa_matches=len(qa_results))
+        return ChatResponse(
+            response=assistant_response, 
+            session_id=session_id,
+            qa_matches=len(qa_results) 
+        )
 
     except HTTPException:
         raise
