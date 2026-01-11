@@ -168,6 +168,41 @@ def detect_unknown_answer(response: str) -> bool:
     response_lower = response.lower()
     return any(phrase in response_lower for phrase in unknown_phrases)
 
+PERSONAL_INTENT_PATTERNS = [
+    r"\bwhat are you interested in\b",
+    r"\bwhat do you like\b",
+    r"\bdo you enjoy\b",
+    r"\byour (interests|hobbies|preferences|opinions)\b",
+    r"\bwhat is your opinion\b",
+]
+
+def classify_intent(user_message: str) -> str:
+    msg = user_message.lower()
+    for pattern in PERSONAL_INTENT_PATTERNS:
+        if re.search(pattern, msg):
+            return "PERSONAL_PREFERENCE"
+    return "SAFE"
+
+def policy_decision(intent: str) -> Optional[str]:
+    if intent == "PERSONAL_PREFERENCE":
+        return (
+            "I don't have enough information to answer that. "
+            "Could you clarify or provide more details?"
+        )
+    return None
+
+FORBIDDEN_OUTPUT_PHRASES = [
+    "i enjoy",
+    "my interests",
+    "my hobbies",
+    "as an ai",
+    "built by amazon",
+]
+
+def validate_model_output(text: str) -> bool:
+    text_lower = text.lower()
+    return not any(p in text_lower for p in FORBIDDEN_OUTPUT_PHRASES)
+
 def send_pushover_notification(question: str, session_id: str):
     """Sends a Pushover notification about an unknown question"""
     if not ENABLE_PUSHOVER or not PUSHOVER_USER_KEY or not PUSHOVER_API_TOKEN:
@@ -347,6 +382,29 @@ async def chat(request: ChatRequest):
         # Load conversation history
         conversation = load_conversation(session_id)
 
+        # === GUARDRAIL: pre-model check ===
+        intent = classify_intent(request.message)
+        policy_response = policy_decision(intent)
+
+        if policy_response:
+            # Do NOT call Bedrock
+            conversation.append(
+                {"role": "user", "content": request.message, "timestamp": datetime.now().isoformat()}
+            )
+            conversation.append(
+                {
+                    "role": "assistant",
+                    "content": policy_response,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+            save_conversation(session_id, conversation)
+
+            return ChatResponse(
+                response=policy_response,
+                session_id=session_id
+            )
+
         qa_results = search_qa_bucket(request.message)
         qa_context = ""
 
@@ -368,6 +426,10 @@ async def chat(request: ChatRequest):
 
         # Call Bedrock for response
         assistant_response = call_bedrock(conversation, request.message, qa_context)
+        if not validate_model_output(assistant_response):
+            assistant_response = (
+                "I don't have enough information to answer that accurately."
+            )
 
         # Update conversation history
         conversation.append(
